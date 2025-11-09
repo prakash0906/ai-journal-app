@@ -1,11 +1,15 @@
 # Journal Chat Interface
 
-A conversational journaling application built with Vercel AI SDK, Next.js, and OpenAI that allows users to manage journal entries through natural language.
+A conversational journal application built with Vercel AI SDK, Next.js, and GROQ that allows users to manage journal entries through natural language.
+
+### Demo Image
+![Demo image](./assets/images/demo-screenshot.png)
+
 
 ## Features
 
 - **Natural Language Entry Creation**: Add journal entries conversationally
-  - Shopping lists: "Remind me to buy eggs"
+  - Shopping lists: "Remind me to buy eggs next time I'm at the supermarket"
   - Recommendations: "Alice says 'Check out Kritunga for biryani'"
   - General notes: Any text-based entry
   
@@ -15,18 +19,16 @@ A conversational journaling application built with Vercel AI SDK, Next.js, and O
   - Category-based filtering
   
 - **Hallucination Protection**: Built-in safeguards to keep interactions journal-focused
-  - Rejects non-journaling queries like "What is 2+2?"
-  - Provides helpful redirection messages
+  - Rejects non-journal queries like "What is 2+2?"
 
 - **Context Management**: Handles long conversations efficiently
-  - Only sends recent context to the model
   - Maintains full chat history in UI
 
 ## Tech Stack
 
 - **Framework**: Next.js 14 (App Router)
 - **AI SDK**: Vercel AI SDK
-- **LLM**: OpenAI GPT-4
+- **LLM**: Llama 4 Scout
 - **UI**: React with Tailwind CSS
 - **Icons**: Lucide React
 
@@ -34,7 +36,7 @@ A conversational journaling application built with Vercel AI SDK, Next.js, and O
 
 - Node.js 18+ 
 - npm or yarn
-- OpenAI API Key
+- GROQ API Key
 
 ## Installation
 
@@ -53,7 +55,7 @@ npm install
 
 Create a `.env.local` file in the root directory:
 ```bash
-OPENAI_API_KEY=your_openai_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 4. **Run the development server**
@@ -67,19 +69,29 @@ Navigate to `http://localhost:3000`
 ## Project Structure
 
 ```
-journal-chat-app/
+ai-journal-app/
 ├── app/
 │   ├── api/
 │   │   └── chat/
 │   │       └── route.ts          # API route for chat completion
+│   └── globals.css               # Global style file
 │   ├── layout.tsx                # Root layout
 │   └── page.tsx                  # Main chat interface
-├── lib/
-│   └── journal-store.ts          # In-memory journal storage
+├── assets/                       # Contain all assets files
+├── components/
+│   ├── Header/
+│   │   └── Header.tsx            # Header component
+│   ├── Input/
+│   │   └── Input.tsx             # User Input component
+│   ├── Message/
+│   │   └── Message.tsx           # Chat message display component
 ├── .env.local                    # Environment variables
+├── .gitignore
 ├── package.json
+└── postcss.config.js
 ├── next.config.js
 └── tailwind.config.js
+└── tsconfig.json
 ```
 
 ## Usage Examples
@@ -87,56 +99,44 @@ journal-chat-app/
 ### Adding Entries
 
 ```
-User: "Remind me to buy eggs next time I'm at the supermarket"
-Assistant: "Got it! I've added 'buy eggs next time I'm at the supermarket' to your journal as a shopping item."
-
-User: "Alice says 'I should check out Kritunga for their awesome biryani'"
-Assistant: "Added! I've saved Alice's recommendation about Kritunga for awesome biryani."
+User: Remind me to buy eggs next time I'm at the supermarket
+Assistant: I've added a new journal entry:
+  Category: reminder
+  Entry: Remind me to buy eggs next time I'm at the supermarket
+  You can view your reminders by asking "What are my reminders?" or "List my reminders".
+  What's next?
 ```
 
 ### Querying Entries
 
 ```
-User: "What is my shopping list?"
-Assistant: "Here's your shopping list:
-- Buy eggs next time I'm at the supermarket
-- Milk and bread from grocery store"
-
-User: "I'm at the supermarket. What should I buy?"
-Assistant: "Here are your shopping items:
-- Buy eggs
-- Get milk and bread"
+User: What is my shopping list
+Assistant: Let me check your journal entries...
+  Your current shopping list:
+  Eggs
+  You have 1 item on your shopping list.
+  Would you like to add something to your shopping list or view other journal entries?
 ```
 
 ### Handling Non-Journal Queries
 
 ```
-User: "What is 2+2?"
-Assistant: "I'm only a journaling app. I can help you create journal entries, add reminders, maintain shopping lists, and retrieve your notes. I can't help with calculations or general knowledge questions."
+User: What is 2+2?
+Assistant: I'm only a journal assistant. I can help you add, search, or organize your journal entries.
 ```
 
 ## Implementation Details
-
-### Function Calling
-
-The app uses OpenAI's function calling to structure interactions:
-
-1. **addJournalEntry**: Creates new journal entries with automatic categorization
-2. **queryJournal**: Retrieves entries based on user queries with optional filtering
 
 ### Hallucination Protection
 
 Multiple layers of protection:
 
 1. **System Prompt**: Clear instructions about capabilities and limitations
-2. **Function Schema**: Strict parameter validation
-3. **Response Validation**: Checks for inappropriate responses before display
+2. **Response Validation**: Checks for inappropriate responses before display
 
 ### Context Window Management
 
-- Maintains full conversation history in UI state
-- Sends only last 10 messages to the model to stay within token limits
-- Summarizes older context if needed for continuity
+- Maintains full conversation history in client-side (browser) in memory
 
 ### Server Memory
 
@@ -153,11 +153,7 @@ Handles chat messages and executes journal operations.
 
 **Request Body:**
 ```json
-{
-  "messages": [
-    { "role": "user", "content": "Remind me to buy eggs" }
-  ]
-}
+{"id":"h1PmE07wMMWWhUu7","messages":[{"id":"welcome","role":"assistant","parts":[{"text":"Hi! I'm your journal assistant. \n          You can add entries like \"Remind me to buy eggs next time I'm at the supermarket\" or \"Alice says 'I should check out Kritunga for their awesome biryani'\" \n          or \"What is my shopping list\" or \"I'm at the supermarket. What should I buy?\"","type":"text"}]},{"parts":[{"type":"text","text":"Remind me to buy eggs next time I'm at the supermarket"}],"id":"9ummps8Wk3DYxMmC","role":"user"}],"trigger":"submit-message"}
 ```
 
 **Response:**
@@ -167,10 +163,10 @@ Stream of AI responses with function calls embedded.
 
 ### Adding New Categories
 
-Edit `lib/journal-store.ts` to add new entry categories:
+Edit `app/api/chat/route.ts` to add new entry categories:
 
 ```typescript
-export type EntryCategory = 'shopping' | 'reminder' | 'note' | 'todo' | 'your-category';
+const SYSTEM_PROMPT = Modify categories under text `Categories:`;
 ```
 
 ### Modifying AI Behavior
@@ -178,10 +174,7 @@ export type EntryCategory = 'shopping' | 'reminder' | 'note' | 'todo' | 'your-ca
 Edit the system prompt in `app/api/chat/route.ts`:
 
 ```typescript
-const systemMessage = {
-  role: 'system',
-  content: 'Your custom instructions here...'
-};
+const SYSTEM_PROMPT = `Your custom instructions here...`;
 ```
 
 ### Styling
@@ -192,7 +185,7 @@ The app uses Tailwind CSS. Customize styles in:
 
 ## Limitations & Known Issues
 
-1. **Memory Storage**: Entries are lost on server restart
+1. **Memory Storage**: Entries are lost on server restart or page refresh
 2. **No Authentication**: Single-user experience only
 3. **Rate Limits**: Subject to OpenAI API rate limits
 4. **Context Length**: Very long conversations may hit token limits
@@ -210,26 +203,13 @@ The app uses Tailwind CSS. Customize styles in:
 
 ## Troubleshooting
 
-### "OpenAI API key not found"
-Ensure `.env.local` exists with valid `OPENAI_API_KEY`
+### "API key not found or Invalid API Key"
+Ensure `.env.local` exists with valid `GROQ_API_KEY`
 
 ### "Module not found" errors
 Run `npm install` to install all dependencies
 
-### Entries not persisting
-This is expected behavior - server memory resets on restart
-
 ### Slow responses
-Check your OpenAI API quota and rate limits
-
-## License
-
-MIT
-
-## Contributing
-
-Contributions welcome! Please open an issue or submit a pull request.
+Check your GROQ API quota and rate limits
 
 ---
-
-Built with ❤️ using Vercel AI SDK

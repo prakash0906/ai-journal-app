@@ -1,133 +1,49 @@
-import OpenAI from 'openai';
-import { OpenAIStream, StreamingTextResponse } from 'ai';
-import { journalStore } from '@/lib/journal-store';
+import { createGroq } from '@ai-sdk/groq';
+import { convertToModelMessages, streamText } from 'ai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const groq = createGroq();
 
-export const runtime = 'edge';
+const SYSTEM_PROMPT = `You are a helpful journal assistant. Your ONLY purpose is to help users manage their journal entries.
 
-const functions: OpenAI.Chat.Completions.ChatCompletionCreateParams.Function[] = [
-  {
-    name: 'addJournalEntry',
-    description: 'Add a new entry to the journal. Use this when the user wants to save information, create reminders, or add notes.',
-    parameters: {
-      type: 'object',
-      properties: {
-        content: {
-          type: 'string',
-          description: 'The content of the journal entry',
-        },
-        category: {
-          type: 'string',
-          enum: ['shopping', 'reminder', 'note', 'recommendation', 'todo'],
-          description: 'The category of the entry',
-        },
-      },
-      required: ['content', 'category'],
-    },
-  },
-  {
-    name: 'queryJournal',
-    description: 'Query the journal to retrieve entries. Use this when the user asks about their entries, lists, or wants to see what they have saved.',
-    parameters: {
-      type: 'object',
-      properties: {
-        category: {
-          type: 'string',
-          enum: ['shopping', 'reminder', 'note', 'recommendation', 'todo', 'all'],
-          description: 'The category to filter by, or "all" for all entries',
-        },
-      },
-      required: ['category'],
-    },
-  },
-];
+You can:
+1. Add new journal entries (reminders, notes, shopping items, quotes, etc.)
+2. Search and retrieve journal entries
+3. List entries by category (shopping list, reminders, quotes, etc.)
+4. Help organize and recall what the user has journal
+
+You CANNOT:
+- Do mathematical calculations
+- Answer general knowledge questions
+- Help with coding or technical questions
+- Discuss topics unrelated to the user's journal
+- Provide weather information
+- Answer "who is" or "what is" questions unrelated to the journal
+
+When the user asks you to do something outside journal, politely say: "I'm only a journal assistant. I can help you add, search, or organize your journal entries."
+
+Categories:
+- shopping: Anything related to buying, groceries, supermarket, store
+- reminder: Tasks, todos, things to remember
+- quote: Things people said, quotes, conversations
+- general: Everything else
+
+Current date: ${new Date().toLocaleDateString()}`;
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  try {
+    const { messages } = await req.json();
+    // Use LLM for queries
+    const result = await streamText({
+      model: groq('meta-llama/llama-4-scout-17b-16e-instruct'),
+      system: SYSTEM_PROMPT,
+      messages: convertToModelMessages(messages),
+      temperature: 0,
+    });
 
-  // Keep only last 10 messages for context to manage token usage
-  const recentMessages = messages.slice(-10);
+    return result.toUIMessageStreamResponse();
 
-  const systemMessage = {
-    role: 'system',
-    content: `You are a helpful journaling assistant. Your ONLY purpose is to help users manage their journal entries.
-
-Your capabilities:
-1. Create journal entries using the addJournalEntry function
-2. Retrieve journal entries using the queryJournal function
-3. Categorize entries appropriately (shopping, reminder, note, recommendation, todo)
-
-STRICT RULES:
-- You can ONLY help with journaling tasks
-- If asked anything unrelated to journaling (math problems, general knowledge, weather, jokes, etc.), politely decline and explain you're a journaling app
-- Always use functions to add or query entries - never just acknowledge without calling a function
-- When creating entries, extract the key information and choose the appropriate category
-- When querying, use the right category filter based on context
-
-Valid requests you MUST handle with functions:
-- "Remind me to buy eggs" → addJournalEntry with category "shopping"
-- "What's my shopping list?" → queryJournal with category "shopping"
-- "Alice recommended Kritunga" → addJournalEntry with category "recommendation"
-
-Invalid requests you MUST refuse:
-- "What is 2+2?" → Politely decline
-- "Tell me a joke" → Politely decline
-- Any request not related to journaling → Politely decline
-
-Always be conversational and friendly while staying focused on journaling.`,
-  };
-
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4-turbo-preview',
-    stream: true,
-    messages: [systemMessage, ...recentMessages],
-    functions,
-    function_call: 'auto',
-  });
-
-  const stream = OpenAIStream(response, {
-    experimental_onFunctionCall: async (
-      { name, arguments: args },
-      createFunctionCallMessages
-    ) => {
-      if (name === 'addJournalEntry') {
-        const { content, category } = args;
-        journalStore.addEntry({ content, category });
-        
-        const newMessages = createFunctionCallMessages({
-          success: true,
-          message: `Entry added successfully to ${category} category`,
-        });
-        
-        return openai.chat.completions.create({
-          messages: [...messages, ...newMessages],
-          model: 'gpt-4-turbo-preview',
-          stream: true,
-        });
-      }
-
-      if (name === 'queryJournal') {
-        const { category } = args;
-        const entries = journalStore.getEntries(
-          category === 'all' ? undefined : category
-        );
-        
-        const newMessages = createFunctionCallMessages({
-          entries,
-          count: entries.length,
-        });
-        
-        return openai.chat.completions.create({
-          messages: [...messages, ...newMessages],
-          model: 'gpt-4-turbo-preview',
-          stream: true,
-        });
-      }
-    },
-  });
-
-  return new StreamingTextResponse(stream);
+  } catch (error: any) {
+    console.error('Error:', error);
+    return new Response('Sorry, I encountered an error. Please try again.', { status: 500 });
+  }
 }

@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       model: groq('meta-llama/llama-4-scout-17b-16e-instruct'),
       system: SYSTEM_PROMPT,
       messages: convertToModelMessages(messages),
-      temperature: 0,
+      temperature: 0.1,
     });
 
     return result.toUIMessageStreamResponse();

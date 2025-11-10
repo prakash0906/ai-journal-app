@@ -2,8 +2,8 @@
 
 A conversational journal application built with Vercel AI SDK, Next.js, and GROQ that allows users to manage journal entries through natural language.
 
-### Demo Image
-![Demo image](./assets/images/demo-screenshot.png)
+### Demo
+![Demo image](./assets/demo-screenshot.png)
 
 
 ## Features
